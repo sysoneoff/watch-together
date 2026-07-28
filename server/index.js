@@ -12,7 +12,7 @@ const { validateTelegramInitData } = require("./telegramAuth");
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" }, // productionda o'z domeningizga cheklang
+  cors: { origin: "*" }, 
   maxHttpBufferSize: 1e8,
 });
 
@@ -24,7 +24,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "..", "public")));
 app.use("/uploads", express.static(UPLOAD_DIR));
 
-// ---- Video fayl yuklash (foydalanuvchi videosi) ----
+// ---- Video fayl yuklash ----
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
@@ -34,7 +34,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit, kerak bo'lsa o'zgartiring
+  limits: { fileSize: 500 * 1024 * 1024 }, 
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("video/")) {
       return cb(new Error("Faqat video fayllarga ruxsat berilgan"));
@@ -50,9 +50,6 @@ app.post("/api/upload", upload.single("video"), (req, res) => {
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
-// ---- Telegram Mini App: initData'ni tasdiqlash (ixtiyoriy) ----
-// Frontend Telegram'dan olingan initData'ni shu yerga yuborsa, server uni
-// TELEGRAM_BOT_TOKEN yordamida tekshiradi va haqiqiy foydalanuvchi ma'lumotini qaytaradi.
 app.post("/api/telegram-verify", (req, res) => {
   const { initData } = req.body || {};
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -64,7 +61,7 @@ app.post("/api/telegram-verify", (req, res) => {
   res.json({ user });
 });
 
-// ---- Socket.io: real-vaqt xona, sinxronizatsiya, chat, WebRTC signalling ----
+// ---- Socket.io ----
 io.on("connection", (socket) => {
   let currentRoomId = null;
 
@@ -102,7 +99,19 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("chat:system", `${name || "Mehmon"} xonaga qo'shildi`);
   });
 
-  // ---- Xo'jayinni almashtirish ----
+  // ---- XONANI YOPISH (Yangi) ----
+  socket.on("room:close", ({ roomId }) => {
+    const room = roomsStore.getRoom(roomId);
+    // Faqat xona egasi (host) yopa oladi
+    if (!room || room.hostSocketId !== socket.id) return;
+    
+    // Barcha foydalanuvchilarga xona yopilganini bildirish
+    io.to(roomId).emit("room:closed");
+    
+    // Server xotirasidan o'chirish (agar xohlasangiz xonadagi odamlarni majburiy chiqarish)
+    io.in(roomId).socketsLeave(roomId);
+  });
+
   socket.on("host:transfer", ({ roomId, targetSocketId }) => {
     const room = roomsStore.getRoom(roomId);
     if (!room || room.hostSocketId !== socket.id) return;
@@ -111,7 +120,6 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("chat:system", "Xona egasi almashtirildi");
   });
 
-  // ---- Foydalanuvchini chiqarib yuborish (kick) ----
   socket.on("host:kick", ({ roomId, targetSocketId }) => {
     const room = roomsStore.getRoom(roomId);
     if (!room || room.hostSocketId !== socket.id) return;
@@ -121,15 +129,13 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("room:users", roomsStore.listUsers(roomId));
   });
 
-  // ---- Video sinxronizatsiyasi (faqat xona egasi boshqaradi - host-authoritative) ----
   socket.on("video:set", ({ roomId, type, source, title }) => {
     const room = roomsStore.getRoom(roomId);
-    if (!room || room.hostSocketId !== socket.id) return; // faqat host video tanlashi mumkin
+    if (!room || room.hostSocketId !== socket.id) return; 
     roomsStore.updateVideoState(roomId, { type, source, title: title || null, isPlaying: false, currentTime: 0 });
     io.to(roomId).emit("video:changed", { type, source, title: title || null });
   });
 
-  // ---- Playlist / navbat ----
   socket.on("playlist:add", ({ roomId, item }) => {
     const room = roomsStore.getRoom(roomId);
     if (!room || room.hostSocketId !== socket.id) return;
@@ -181,7 +187,6 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("playlist:index-changed", { index: nextIndex });
   });
 
-  // ---- Emoji reaksiyalar ----
   socket.on("reaction:send", ({ roomId, emoji, name }) => {
     io.to(roomId).emit("reaction:show", { emoji, name });
   });
@@ -207,14 +212,12 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("video:seek", { currentTime });
   });
 
-  // Yangi qo'shilgan a'zo hozirgi holatni so'rashi mumkin
   socket.on("video:sync-request", ({ roomId }, cb) => {
     const room = roomsStore.getRoom(roomId);
     if (!room) return cb && cb({ error: "Xona topilmadi" });
     cb && cb({ video: room.video });
   });
 
-  // ---- Matnli chat ----
   socket.on("chat:message", ({ roomId, name, text }) => {
     if (!text || !text.trim()) return;
     const message = { name, text: text.slice(0, 1000), time: Date.now() };
@@ -222,8 +225,6 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("chat:message", message);
   });
 
-  // ---- WebRTC signalling (ovozli chat uchun) ----
-  // Har bir client boshqalarga to'g'ridan-to'g'ri (mesh) ulanadi, server faqat signal almashinuvchi vosita.
   socket.on("voice:join", ({ roomId }) => {
     socket.to(roomId).emit("voice:peer-joined", { socketId: socket.id });
   });
