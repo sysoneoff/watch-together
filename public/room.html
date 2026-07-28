@@ -25,6 +25,8 @@
 
     <main class="room-main">
       <section class="video-section">
+        
+        <!-- Xona egasi (Host) boshqaruv paneli -->
         <div id="hostControls" class="host-controls" style="display:none">
           <input id="youtubeInput" type="text" placeholder="YouTube havolasini shu yerga qo'ying" />
           <button id="loadYoutubeBtn" class="btn btn-small">Hozir yuklash</button>
@@ -32,6 +34,9 @@
           <span class="or-text">yoki</span>
           <input id="fileInput" type="file" accept="video/*" />
           <span id="uploadStatus"></span>
+          
+          <!-- YANGI TUGMA: Xonani yopish -->
+          <button id="closeRoomBtn" class="btn btn-small" style="background-color: #ff4d4f; color: white; border-color: #ff4d4f; margin-left: 10px;" title="Xonani butunlay yopish">🛑 Yopish</button>
         </div>
 
         <div id="playerWrap" class="player-wrap">
