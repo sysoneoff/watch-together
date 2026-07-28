@@ -24,6 +24,11 @@ socket.on("connect", () => {
   if (action === "create") {
     socket.emit("room:create", { name: myName, password: createPassword }, (res) => {
       roomId = res.roomId;
+      
+      // REFRESH MUAMMOSI YECHIMI: URL'ni avtomat ravishda 'join' ga o'zgartirish
+      const newUrl = `${window.location.origin}${window.location.pathname}?action=join&room=${roomId}&name=${encodeURIComponent(myName)}`;
+      window.history.replaceState(null, '', newUrl);
+
       onRoomReady(res.users, res.video, [], true, res.playlist, res.hasPassword);
     });
   } else {
@@ -219,7 +224,7 @@ function createOrUpdateYoutubePlayer(videoId) {
       height: "100%",
       width: "100%",
       videoId,
-      playerVars: { rel: 0, playsinline: 1 }, // playsinline iOS va Telegram uchun muhim
+      playerVars: { rel: 0, playsinline: 1 }, 
       events: {
         onReady: () => attachYoutubePlayerEvents(),
         onStateChange: onYoutubeStateChange,
@@ -369,26 +374,32 @@ function spawnReaction(emoji) {
   setTimeout(() => span.remove(), 2200);
 }
 
-// ================== TO'LIQ EKRAN ==================
+// ================== TO'LIQ EKRAN (Mobil/Bot moslashtirilgan) ==================
 el("fullscreenBtn").onclick = () => {
   const wrap = el("playerWrap");
   
-  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+  // Telegram Bot ichida oynani iloji boricha kengaytirish
+  if (window.Telegram && window.Telegram.WebApp) {
+    window.Telegram.WebApp.expand();
+  }
+
+  if (!wrap.classList.contains("fullscreen-active")) {
+    // CSS class orqali majburiy fullscreen
+    wrap.classList.add("fullscreen-active");
+    
+    // Web uchun standart fullscreen API chaqirish
     if (wrap.requestFullscreen) {
-      wrap.requestFullscreen().catch(() => wrap.classList.add("fullscreen-active"));
+      wrap.requestFullscreen().catch(()=>{});
     } else if (wrap.webkitRequestFullscreen) {
       wrap.webkitRequestFullscreen();
-    } else {
-      // API ishlamasa soxta fullscreen (CSS) ni yoqamiz
-      wrap.classList.add("fullscreen-active");
     }
   } else {
+    wrap.classList.remove("fullscreen-active");
+    // Web uchun standart ekrandan chiqish
     if (document.exitFullscreen) {
-      document.exitFullscreen();
+      document.exitFullscreen().catch(()=>{});
     } else if (document.webkitExitFullscreen) {
       document.webkitExitFullscreen();
-    } else {
-      wrap.classList.remove("fullscreen-active");
     }
   }
 };
@@ -565,3 +576,18 @@ if (typeof setupTelegramBackButton === "function") {
     window.location.href = "/";
   });
 }
+
+// ---------- XONANI YOPISH ----------
+const closeBtn = el("closeRoomBtn");
+if (closeBtn) {
+  closeBtn.onclick = () => {
+    if(confirm("Xonani butunlay yopmoqchimisiz? Barcha foydalanuvchilar chiqarib yuboriladi.")) {
+      socket.emit("room:close", { roomId });
+    }
+  };
+}
+
+socket.on("room:closed", () => {
+  alert("Xona egasi tomonidan yopildi.");
+  window.location.href = "/"; 
+});
