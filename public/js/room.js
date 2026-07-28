@@ -24,6 +24,11 @@ socket.on("connect", () => {
   if (action === "create") {
     socket.emit("room:create", { name: myName, password: createPassword }, (res) => {
       roomId = res.roomId;
+      
+      // REFRESH MUAMMOSI YECHIMI: URL'ni avtomat ravishda 'join' ga o'zgartirish
+      const newUrl = `${window.location.origin}${window.location.pathname}?action=join&room=${roomId}&name=${encodeURIComponent(myName)}`;
+      window.history.replaceState(null, '', newUrl);
+
       onRoomReady(res.users, res.video, [], true, res.playlist, res.hasPassword);
     });
   } else {
@@ -207,6 +212,11 @@ function loadVideo(type, source, title) {
 function createOrUpdateYoutubePlayer(videoId) {
   const start = () => {
     if (ytPlayer) {
+      // Pleyer hali to'liq yuklanmagan bo'lsa, kutib turamiz
+      if (typeof ytPlayer.loadVideoById !== "function") {
+        setTimeout(() => createOrUpdateYoutubePlayer(videoId), 300);
+        return;
+      }
       ytPlayer.loadVideoById(videoId);
       return;
     }
@@ -214,7 +224,7 @@ function createOrUpdateYoutubePlayer(videoId) {
       height: "100%",
       width: "100%",
       videoId,
-      playerVars: { rel: 0 },
+      playerVars: { rel: 0, playsinline: 1 }, 
       events: {
         onReady: () => attachYoutubePlayerEvents(),
         onStateChange: onYoutubeStateChange,
@@ -238,7 +248,6 @@ function attachYoutubePlayerEvents() {
 
 function onYoutubeStateChange(e) {
   if (suppressEvents || !isHost) {
-    // Video tugaganda, host bo'lmasak ham navbatdagi keyingi videoni faqat host boshqaradi
     return;
   }
   if (e.data === YT.PlayerState.PLAYING) {
@@ -280,7 +289,7 @@ socket.on("video:seek", ({ currentTime }) => applyRemoteVideoState({ currentTime
 function applyRemoteVideoState(state) {
   suppressEvents = true;
   try {
-    if (currentVideoType === "youtube" && ytPlayer && ytPlayer.seekTo) {
+    if (currentVideoType === "youtube" && ytPlayer && typeof ytPlayer.seekTo === "function") {
       if (typeof state.currentTime === "number") ytPlayer.seekTo(state.currentTime, true);
       if (state.isPlaying === true) ytPlayer.playVideo();
       if (state.isPlaying === false) ytPlayer.pauseVideo();
@@ -292,6 +301,8 @@ function applyRemoteVideoState(state) {
       if (state.isPlaying === true) player.play();
       if (state.isPlaying === false) player.pause();
     }
+  } catch (err) {
+    console.warn("Sinxronlashda xatolik (kutilmoqda):", err);
   } finally {
     setTimeout(() => (suppressEvents = false), 300);
   }
@@ -363,16 +374,36 @@ function spawnReaction(emoji) {
   setTimeout(() => span.remove(), 2200);
 }
 
-// ================== TO'LIQ EKRAN ==================
+// ================== TO'LIQ EKRAN (Mobil/Bot moslashtirilgan) ==================
 el("fullscreenBtn").onclick = () => {
   const wrap = el("playerWrap");
-  if (!document.fullscreenElement) {
-    wrap.requestFullscreen?.() || wrap.webkitRequestFullscreen?.();
+  
+  // Telegram Bot ichida oynani iloji boricha kengaytirish
+  if (window.Telegram && window.Telegram.WebApp) {
+    window.Telegram.WebApp.expand();
+  }
+
+  if (!wrap.classList.contains("fullscreen-active")) {
+    // CSS class orqali majburiy fullscreen
     wrap.classList.add("fullscreen-active");
+    
+    // Web uchun standart fullscreen API chaqirish
+    if (wrap.requestFullscreen) {
+      wrap.requestFullscreen().catch(()=>{});
+    } else if (wrap.webkitRequestFullscreen) {
+      wrap.webkitRequestFullscreen();
+    }
   } else {
-    document.exitFullscreen?.() || document.webkitExitFullscreen?.();
+    wrap.classList.remove("fullscreen-active");
+    // Web uchun standart ekrandan chiqish
+    if (document.exitFullscreen) {
+      document.exitFullscreen().catch(()=>{});
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    }
   }
 };
+
 document.addEventListener("fullscreenchange", () => {
   el("playerWrap").classList.toggle("fullscreen-active", !!document.fullscreenElement);
 });
@@ -418,13 +449,24 @@ const ICE_SERVERS = {
 el("voiceToggleBtn").onclick = async () => {
   if (!voiceActive) {
     try {
+      // Eski va yangi mobil brauzerlar uchun moslashtirilgan kod
+      const getUserMedia = navigator.mediaDevices?.getUserMedia || 
+                           navigator.getUserMedia || 
+                           navigator.webkitGetUserMedia || 
+                           navigator.mozGetUserMedia;
+                           
+      if (!getUserMedia) {
+        throw new Error("Mikrofon qo'llab-quvvatlanmaydi");
+      }
+
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       voiceActive = true;
       el("voiceToggleBtn").textContent = "🔇 Ovozli suhbatdan chiqish";
       el("voiceStatus").textContent = "Ulanmoqda...";
       socket.emit("voice:join", { roomId });
     } catch (err) {
-      showToast("Mikrofonga ruxsat berilmadi", "error");
+      console.error(err);
+      showToast("Mikrofonga ruxsat berilmadi yoki tizim chekladi", "error");
     }
   } else {
     leaveVoice();
@@ -534,3 +576,18 @@ if (typeof setupTelegramBackButton === "function") {
     window.location.href = "/";
   });
 }
+
+// ---------- XONANI YOPISH ----------
+const closeBtn = el("closeRoomBtn");
+if (closeBtn) {
+  closeBtn.onclick = () => {
+    if(confirm("Xonani butunlay yopmoqchimisiz? Barcha foydalanuvchilar chiqarib yuboriladi.")) {
+      socket.emit("room:close", { roomId });
+    }
+  };
+}
+
+socket.on("room:closed", () => {
+  alert("Xona egasi tomonidan yopildi.");
+  window.location.href = "/"; 
+});
