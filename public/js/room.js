@@ -207,6 +207,11 @@ function loadVideo(type, source, title) {
 function createOrUpdateYoutubePlayer(videoId) {
   const start = () => {
     if (ytPlayer) {
+      // Pleyer hali to'liq yuklanmagan bo'lsa, kutib turamiz
+      if (typeof ytPlayer.loadVideoById !== "function") {
+        setTimeout(() => createOrUpdateYoutubePlayer(videoId), 300);
+        return;
+      }
       ytPlayer.loadVideoById(videoId);
       return;
     }
@@ -214,7 +219,7 @@ function createOrUpdateYoutubePlayer(videoId) {
       height: "100%",
       width: "100%",
       videoId,
-      playerVars: { rel: 0 },
+      playerVars: { rel: 0, playsinline: 1 }, // playsinline iOS va Telegram uchun muhim
       events: {
         onReady: () => attachYoutubePlayerEvents(),
         onStateChange: onYoutubeStateChange,
@@ -238,7 +243,6 @@ function attachYoutubePlayerEvents() {
 
 function onYoutubeStateChange(e) {
   if (suppressEvents || !isHost) {
-    // Video tugaganda, host bo'lmasak ham navbatdagi keyingi videoni faqat host boshqaradi
     return;
   }
   if (e.data === YT.PlayerState.PLAYING) {
@@ -280,7 +284,7 @@ socket.on("video:seek", ({ currentTime }) => applyRemoteVideoState({ currentTime
 function applyRemoteVideoState(state) {
   suppressEvents = true;
   try {
-    if (currentVideoType === "youtube" && ytPlayer && ytPlayer.seekTo) {
+    if (currentVideoType === "youtube" && ytPlayer && typeof ytPlayer.seekTo === "function") {
       if (typeof state.currentTime === "number") ytPlayer.seekTo(state.currentTime, true);
       if (state.isPlaying === true) ytPlayer.playVideo();
       if (state.isPlaying === false) ytPlayer.pauseVideo();
@@ -292,6 +296,8 @@ function applyRemoteVideoState(state) {
       if (state.isPlaying === true) player.play();
       if (state.isPlaying === false) player.pause();
     }
+  } catch (err) {
+    console.warn("Sinxronlashda xatolik (kutilmoqda):", err);
   } finally {
     setTimeout(() => (suppressEvents = false), 300);
   }
@@ -366,13 +372,27 @@ function spawnReaction(emoji) {
 // ================== TO'LIQ EKRAN ==================
 el("fullscreenBtn").onclick = () => {
   const wrap = el("playerWrap");
-  if (!document.fullscreenElement) {
-    wrap.requestFullscreen?.() || wrap.webkitRequestFullscreen?.();
-    wrap.classList.add("fullscreen-active");
+  
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    if (wrap.requestFullscreen) {
+      wrap.requestFullscreen().catch(() => wrap.classList.add("fullscreen-active"));
+    } else if (wrap.webkitRequestFullscreen) {
+      wrap.webkitRequestFullscreen();
+    } else {
+      // API ishlamasa soxta fullscreen (CSS) ni yoqamiz
+      wrap.classList.add("fullscreen-active");
+    }
   } else {
-    document.exitFullscreen?.() || document.webkitExitFullscreen?.();
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else {
+      wrap.classList.remove("fullscreen-active");
+    }
   }
 };
+
 document.addEventListener("fullscreenchange", () => {
   el("playerWrap").classList.toggle("fullscreen-active", !!document.fullscreenElement);
 });
@@ -418,13 +438,24 @@ const ICE_SERVERS = {
 el("voiceToggleBtn").onclick = async () => {
   if (!voiceActive) {
     try {
+      // Eski va yangi mobil brauzerlar uchun moslashtirilgan kod
+      const getUserMedia = navigator.mediaDevices?.getUserMedia || 
+                           navigator.getUserMedia || 
+                           navigator.webkitGetUserMedia || 
+                           navigator.mozGetUserMedia;
+                           
+      if (!getUserMedia) {
+        throw new Error("Mikrofon qo'llab-quvvatlanmaydi");
+      }
+
       localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       voiceActive = true;
       el("voiceToggleBtn").textContent = "🔇 Ovozli suhbatdan chiqish";
       el("voiceStatus").textContent = "Ulanmoqda...";
       socket.emit("voice:join", { roomId });
     } catch (err) {
-      showToast("Mikrofonga ruxsat berilmadi", "error");
+      console.error(err);
+      showToast("Mikrofonga ruxsat berilmadi yoki tizim chekladi", "error");
     }
   } else {
     leaveVoice();
