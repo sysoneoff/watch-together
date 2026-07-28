@@ -1,0 +1,26 @@
+{
+  "name": "watch-together",
+  "version": "1.0.0",
+  "description": "Yaqinlar bilan birga video tomosha qilish platformasi (web + mobile APK)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "multer": "^1.4.5-lts.1",
+    "cors": "^2.8.5",
+    "nanoid": "^3.3.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/android": "^6.1.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

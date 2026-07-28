@@ -1,0 +1,11 @@
+{
+  "appId": "com.birgatomosha.app",
+  "appName": "BirgaTomosha",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  }
+}
